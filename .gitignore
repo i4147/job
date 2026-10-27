@@ -800,3 +800,11 @@ zip-files/
 ~$*
 ~$*.doc*
 ~$*.ppt*
+
+# ---- benchmark deliverables (kept in git on purpose) ----
+# The root ignore file has broad "*.json" and "results/" rules; the benchmark
+# results JSON is a required deliverable, so un-ignore just that folder.
+!benchmark/results/
+!benchmark/results/*.json
+!benchmark/results/*.md
+!benchmark/requirements.txt

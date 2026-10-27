@@ -10,14 +10,25 @@ from enum import Enum
 import math
 import multiprocessing as mp
 import multiprocessing.dummy
+import sys
 import time
 
-try:
-    from concurrent.futures import InterpreterPoolExecutor
-except ImportError:
-    InterpreterPoolExecutor = None
-__all__ = ["Backend", "Parallel", "PoolMethod"]
-from .const import MAX_WORKERS
+# InterpreterPoolExecutor was added in CPython 3.14; make it optional so this
+# module is importable (and benchmarkable) on older interpreters.
+_HAS_INTERPRETER_POOL = sys.version_info >= (3, 14)
+InterpreterPoolExecutor = None
+if _HAS_INTERPRETER_POOL:
+    try:
+        from concurrent.futures import InterpreterPoolExecutor
+    except ImportError:  # pragma: no cover - 3.14 layout changed
+        try:
+            from concurrent.futures.interpreter import InterpreterPoolExecutor
+        except ImportError:
+            _HAS_INTERPRETER_POOL = False
+__all__ = ["Backend", "Parallel", "PoolMethod", "MAX_WORKERS"]
+# These modules are plain top-level scripts, not a package: a relative import
+# (``from .const import ...``) fails here.  Keep the shared constant local.
+MAX_WORKERS = 8
 
 
 class PoolMethod(str, Enum):
@@ -234,7 +245,7 @@ class Parallel:
                 mp_context=mp.get_context("spawn"),
             )
         if self.backend is Backend.CF_INTERPRETER:
-            if InterpreterPoolExecutor is None:
+            if not _HAS_INTERPRETER_POOL or InterpreterPoolExecutor is None:
                 msg = "cf_interpreter requires Python 3.14+ (concurrent.futures.InterpreterPoolExecutor)"
                 raise ImportError(msg)
             return InterpreterPoolExecutor(max_workers=workers)

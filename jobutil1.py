@@ -7,6 +7,7 @@ from concurrent.futures import (
     wait,
 )
 from dataclasses import dataclass
+from functools import partial
 import multiprocessing
 from multiprocessing import get_context
 from typing import TypeVar
@@ -19,6 +20,11 @@ _MP_CONTEXT = get_context("spawn")
 
 def _get_pool(workers=MAX_WORKERS):
     return _MP_CONTEXT.Pool(workers)
+
+
+def _file_and_result(func, file):
+    """Module-level helper: lambdas cannot be pickled by the 'spawn' context."""
+    return file, func(file)
 
 
 def mpf_async(func, files, workers=MAX_WORKERS, timeout=30):
@@ -72,7 +78,8 @@ def mpf_imapu(func, files, workers=MAX_WORKERS, chunksize=1):
     results = [None] * len(files_list)
     file_to_idx = {str(f): idx for idx, f in enumerate(files_list)}
     with _get_pool(workers) as pool:
-        for file_path, result in pool.imap_unordered(lambda f: (f, func(f)), files_list, chunksize=chunksize):
+        bound = partial(_file_and_result, func)
+        for file_path, result in pool.imap_unordered(bound, files_list, chunksize=chunksize):
             idx = file_to_idx[str(file_path)]
             results[idx] = result
     return results
@@ -154,9 +161,9 @@ def mpf_tpe(func, files, workers=MAX_WORKERS, timeout=30):
 
 @dataclass
 class ParallelSummary:
-    total = 0
-    succeeded = 0
-    failed = 0
+    total: int = 0
+    succeeded: int = 0
+    failed: int = 0
 
 
 def _submit_until_full(
@@ -187,9 +194,9 @@ def mpf3(
     on_error=None,
     executor_factory=None,
 ):
-    max_workers = MAX_WORKERS
     if executor_factory is None:
         executor_factory = ProcessPoolExecutor
+    max_workers = max(1, int(max_workers))
     max_pending = max(max_pending_factor * max_workers, max_workers)
     summary = ParallelSummary()
     item_iterator = iter(items)
@@ -208,7 +215,14 @@ def mpf3(
                 item = pending.pop(future)
                 summary.total += 1
                 try:
-                    result, error = future.result()
+                    value = future.result()
+                    # Workers normally return their result directly.  Keep
+                    # backwards compatibility with the legacy (result, error)
+                    # pair, where the error slot is an exception instance.
+                    if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], BaseException):
+                        result, error = value
+                    else:
+                        result, error = value, None
                 except Exception as exc:
                     error = f"{type(exc).__name__}: {exc}"
                     result = None

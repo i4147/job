@@ -1,0 +1,6 @@
+# The benchmark itself only needs the standard library.
+# joblib is OPTIONAL: when installed, its methods are benchmarked too;
+# when missing they are listed as "skipped" in the JSON results/report.
+# InterpreterPoolExecutor methods need CPython >= 3.14; on older Pythons they
+# are skipped automatically (no install can provide them).
+joblib>=1.3; python_version >= "3.8"
