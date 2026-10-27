@@ -808,3 +808,12 @@ zip-files/
 !benchmark/results/*.json
 !benchmark/results/*.md
 !benchmark/requirements.txt
+
+# ---- unified run_parallel helper: tests and termux lite (kept in git) ----
+# The generated ignore file has a broad "test*" rule that hides tests/.
+!tests/
+!tests/*.py
+!tests/*.md
+!termux/
+!termux/*.py
+!termux/*.md
