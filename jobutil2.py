@@ -29,6 +29,17 @@ def _call_with_index(func, indexed_file):
     return idx, func(file)
 
 
+def _split_result(value):
+    """Workers return their result directly; keep legacy (result, error) support.
+
+    Only an exception instance in the second slot marks an error, so ordinary
+    tuple results such as ``(path, digest)`` are not swallowed as failures.
+    """
+    if isinstance(value, tuple) and len(value) == 2 and isinstance(value[1], BaseException):
+        return value
+    return value, None
+
+
 def mpf_async(
     func,
     files,
@@ -280,9 +291,9 @@ def mpf3(
                         if remaining_timeout == 0:
                             msg = f"Task timed out after {timeout}s"
                             raise FutureTimeoutError(msg)
-                        result, error = future.result(timeout=remaining_timeout)
+                        result, error = _split_result(future.result(timeout=remaining_timeout))
                     else:
-                        result, error = future.result()
+                        result, error = _split_result(future.result())
                     if error is not None:
                         if on_error:
                             on_error(item, error)

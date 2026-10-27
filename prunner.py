@@ -22,13 +22,21 @@ from concurrent.futures import (
 from dataclasses import dataclass
 from multiprocessing.pool import AsyncResult
 from typing import Any, Literal
-try:
-    from concurrent.futures import InterpreterPoolExecutor
-    _HAS_INTERPRETER_POOL = True
-except ImportError:
-    InterpreterPoolExecutor = None
-    _HAS_INTERPRETER_POOL = False
-type Backend = Literal[
+
+# InterpreterPoolExecutor is only available on CPython 3.14+.  Keep the import
+# optional so this module also imports (and benchmarks) on older interpreters.
+# PEP 695 ``type X = ...`` aliases are deliberately avoided: they need 3.12+.
+_HAS_INTERPRETER_POOL = sys.version_info >= (3, 14)
+InterpreterPoolExecutor = None
+if _HAS_INTERPRETER_POOL:
+    try:
+        from concurrent.futures import InterpreterPoolExecutor
+    except ImportError:  # pragma: no cover - 3.14 layout changed
+        try:
+            from concurrent.futures.interpreter import InterpreterPoolExecutor
+        except ImportError:
+            _HAS_INTERPRETER_POOL = False
+Backend = Literal[
     "auto",
     "thread",
     "process",
@@ -37,7 +45,7 @@ type Backend = Literal[
     "mp_imap_unordered",
     "mp_apply_async",
 ]
-type ErrorPolicy = Literal["raise", "skip", "collect"]
+ErrorPolicy = Literal["raise", "skip", "collect"]
 __all__ = ["ParallelRunner", "Stats", "pmap", "Backend", "ErrorPolicy"]
 _BACKENDS = (
     "auto",
@@ -65,10 +73,13 @@ def _gil_disabled() -> bool:
     except Exception:
         return False
 def _cpu_count() -> int:
+    # os.process_cpu_count() is 3.13+ and may return None.
+    probe = getattr(os, "process_cpu_count", None)
     try:
-        return max(1, os.process_cpu_count())
-    except AttributeError:
-        return max(1, os.cpu_count() or 1)
+        count = probe() if probe is not None else None
+    except Exception:
+        count = None
+    return max(1, count or os.cpu_count() or 1)
 def _auto_chunksize(n_items: int, workers: int) -> int:
     if n_items <= 0:
         return 1
@@ -183,6 +194,9 @@ class ParallelRunner:
                 kwargs["mp_context"] = mp.get_context(self.mp_start_method)
             self._executor = ProcessPoolExecutor(**kwargs)
         else:
+            if not _HAS_INTERPRETER_POOL or InterpreterPoolExecutor is None:
+                msg = "InterpreterPoolExecutor requires CPython 3.14+"
+                raise ImportError(msg)
             self._executor = InterpreterPoolExecutor(
                 max_workers=self.max_workers,
                 initializer=self.initializer,

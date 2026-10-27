@@ -49,7 +49,24 @@ def load(filename, mmap_mode=None, **kwargs):
     with open(filename, "rb") as fh:
         return pickle.load(fh)
 def delayed(func, *args, **kwargs):
-    return functools.partial(func, *args, **kwargs)
+    """joblib-compatible ``delayed`` for this lightweight shim.
+
+    Both spellings must produce a *task* (a zero-argument callable), never the
+    result of calling ``func`` immediately:
+
+        delayed(func, x)          -> functools.partial(func, x)
+        delayed(func)(x)          -> functools.partial(func, x)
+
+    The second form is what ``joblib.Parallel`` users write; the old version
+    executed ``func(x)`` eagerly and handed the result (a tuple) to Parallel.
+    """
+    if args or kwargs:
+        return functools.partial(func, *args, **kwargs)
+
+    def _delayed(*call_args, **call_kwargs):
+        return functools.partial(func, *call_args, **call_kwargs)
+
+    return _delayed
 def _call(task):
     return task()
 class Parallel:
